@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "deca-auto"
+version = "0.1.0"
+description = "Exhaustive GPU-accelerated PDN decap search and scoring tool"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+  { name = "Your Name" }
+]
+keywords = ["PDN", "decoupling", "capacitor", "vector fitting", "PySpice", "CuPy", "GPU"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)"
+]
+
+# ---- 依存関係（CPUのみで動く最小セット）----
+# * GPU(CuPy) と SPICE+VF(scikit-rf, PySpice) は optional-dependencies に分離
+dependencies = [
+  "numpy>=1.26",
+  "matplotlib>=3.8",
+  "tqdm>=4.66",
+  "XlsxWriter>=3.2",
+]
+
+[project.optional-dependencies]
+# CUDA 12.x 環境（推奨）。CUDA 11.x 環境なら cupy-cuda11x を選択
+gpu = [
+  "cupy-cuda12x>=13.0"
+]
+gpu_cuda11 = [
+  "cupy-cuda11x>=12.0"
+]
+# PySpice + scikit-rf（SPICE + VectorFitting を使う場合に有効化）
+spice = [
+  "PySpice>=1.4",
+  "scikit-rf>=0.29"
+]
+
+[project.scripts]
+deca-auto = "deca_auto.main:main"
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/deca_auto",
+  "/tests",
+  "README.md",
+  "pyproject.toml",
+  "user_config.toml",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["deca_auto"]

@@ -1,0 +1,144 @@
+# === ユーザー設定（未指定項目はconfig.pyの既定値を使用） =============================
+
+# TOMLパス
+toml_path = "user_config.toml"
+
+# ---- 周波数グリッド（logspace） ----
+f_start    = 1e2
+f_stop     = 1e9
+num_points = 1024
+
+# ---- 評価帯域 / 目標マスク ----
+# カスタムマスクを有効にすると f_L/f_H はその最小最大で上書き
+f_L      = 1e3
+f_H      = 1e8
+z_target = 0.010
+
+# カスタムマスク
+z_custom_mask = [
+  [1e3,  10e-3],
+  [1e5,  10e-3],
+  [2e6,  30e-3],
+  [1e8,  1.5]
+]
+
+# ---- PDN 寄生成分 ----
+R_vrm = 10e-3
+L_vrm = 10e-9
+R_sN  = 0.1e-3
+L_sN  = 1e-9
+L_mntN = 1e-9
+
+R_s = 0.1e-3
+L_s = 1e-9
+R_v = 0.1e-3
+L_v = 1e-9
+
+# 平面モデル（直列 Rp + (C_p, tanδ)）
+R_p        = 0.5e-3
+C_p        = 5e-12
+tan_delta_p = 0.02
+
+# PySpice サンプリングでの DC バイアス（情報）
+dc_bias = 3.3
+
+# ---- コンデンサ定義（配列の表）----
+# * model_path を指定すると SPICE+VF を試行（失敗時は自動で RLC フォールバック）
+# * C/ESR/ESL を直接指定する場合は解析式を使用
+# * L_mnt を省略すると L_mntN が適用されます
+
+# 例：C/ESR/ESLなどを直接指定
+# [[capacitors]]
+# name = 名前（分かれば何でもよい）
+# C    = 静電容量
+# ESR  = コンデンサのESR
+# ESL  = コンデンサのESL
+# L_mnt = マウント寄生インダクタ
+
+# 例：SPICE モデルを使う場合（2端子 .SUBCKT の .mod/.lib）
+# [[capacitors]]
+# name = "C_vendor_0603_4u7"
+# model_path = "./models/vendor_c0603_4u7.mod"
+# C = モデルを指定したら基本不要だが、読み込みに失敗した時に使用する
+
+[[capacitors]]
+name = "C_100n"
+C    = 100e-9
+
+[[capacitors]]
+name = "C_1u"
+C    = 1e-6
+
+[[capacitors]]
+name = "C_2.2u"
+C    = 2.2e-6
+
+[[capacitors]]
+name = "C_3.3u"
+C    = 3.3e-6
+
+[[capacitors]]
+name = "C_4.7u"
+C    = 4.7e-6
+
+[[capacitors]]
+name = "C_10u"
+C    = 10e-6
+
+[[capacitors]]
+name = "C_22u"
+C    = 22e-6
+
+[[capacitors]]
+name = "C_33u"
+C    = 33e-6
+
+[[capacitors]]
+name = "C_47u"
+C    = 47e-6
+
+[[capacitors]]
+name = "C_100u"
+C    = 100e-6
+
+# ---- 探索パラメータ ----
+max_total_parts       = 16
+min_total_parts_ratio = 0.30   # 総数の下限（割合）
+top_k                 = 10
+shuffle_evaluation    = true
+
+# ---- スコア重み（小さいほど良い。正の重みは減点、負は加点）----
+[weights]
+max      = 0.90
+area     = 0.75
+anti     = 0.35
+flat     = 0.15
+under    = -0.10
+parts    = 0.0
+mc_worst = 1.0
+
+# ---- Monte Carlo（ロバスト化）----
+mc_enable     = true
+mc_samples    = 64
+tol_C         = 0.20
+tol_ESR       = 0.20
+tol_ESL       = 0.20
+mlcc_derating = 0.15
+
+# 共通乱数シード
+seed = 1234
+
+# ---- バックエンド / 精度 ----
+max_vram_ratio = 0.10  # VRAM 空き容量に対するバジェット比（memGetInfo の free に対して）
+dtype_c = "complex64"  # GPU 複素数精度
+dtype_r = "float32"    # GPU 実数精度
+force_numpy = false    # true で強制（GPU持ってない人向け、ちゃんと動くか不明）
+
+# ---- 描画 ----
+plot_view = true
+plot_min_interval_s        = 0.2
+plot_force_update_interval_s = 0.5
+
+# ---- Excel 出力 ----
+excel_path = ""
+excel_name = "dcap_result"
