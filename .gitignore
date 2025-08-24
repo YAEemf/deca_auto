@@ -1,3 +1,4 @@
 *.mod
 *.xlsx
+*.cir
 deca_auto/__pycache__
