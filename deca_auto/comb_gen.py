@@ -15,54 +15,41 @@ import math
 import traceback
 
 
-def _enumerate_fixed_sum(n_types: int, total: int) -> Iterator[np.ndarray]:
-    """
-    Stars-and-bars を再帰で展開する。
-    - n_types 種の非負整数 (x0,...,x_{n-1}) のうち、sum=total をすべて生成
-    - 戻り値: shape=(n_types,) の np.int16
-    """
-    buf = [0] * n_types
-
-    def rec(i: int, rest: int):
-        if i == n_types - 1:
-            buf[i] = rest
-            yield np.asarray(buf, dtype=np.int16)
-            return
-        # 0..rest まで振り分け
-        for v in range(rest + 1):
-            buf[i] = v
-            yield from rec(i + 1, rest - v)
-
-    yield from rec(0, total)
-
-
 def enumerate_count_vectors(
     n_types: int,
     max_total: int,
     min_ratio: float,
     shuffle: bool,
-    seed: int,
+    seed: int | None,
 ) -> Iterator[np.ndarray]:
     """
-    全ての非負整数解を列挙（全ゼロ除外）
-    - 総数 t を [ceil(max_total*min_ratio) .. max_total] とする
-    - shuffle=True の場合、各 t の組合せ順を擬似乱数でシャッフル（探索の多様性向上）
-    戻り値: (n_types,) の np.int16 配列を順次 yield
+    非負整数解（重複組合せ）を全列挙。全ゼロは除外。
+    - shuffle=True のとき、探索順のみランダム化（全件は必ず列挙）
+      * 総数 t の順を乱択
+      * 各レベルの分岐順（0..残り）を乱択
     """
-    try:
-        t_min = max(1, math.ceil(float(max_total) * float(min_ratio)))
-        rng = random.Random(int(seed))
+    t_min = max(1, int(np.ceil(max_total * float(min_ratio))))
+    totals = list(range(t_min, max_total + 1))
+    rng = np.random.default_rng(seed) if shuffle else None
+    if shuffle and len(totals) > 1:
+        rng.shuffle(totals)
 
-        for t in range(t_min, int(max_total) + 1):
-            batch = list(_enumerate_fixed_sum(n_types, t))
-            if shuffle:
-                rng.shuffle(batch)
-            for vec in batch:
-                if vec.sum() > 0:
-                    yield vec
-    except Exception:
-        traceback.print_exc()
-        return
+    buf = np.zeros(n_types, dtype=np.int16)
+
+    def _rec(pos: int, remaining: int):
+        if pos == n_types - 1:
+            buf[pos] = remaining
+            yield buf.copy()
+            return
+        choices = np.arange(remaining + 1, dtype=np.int16)
+        if shuffle and choices.size > 1:
+            rng.shuffle(choices)  # 分岐順を乱択
+        for c in choices:
+            buf[pos] = int(c)
+            yield from _rec(pos + 1, remaining - int(c))
+
+    for t in totals:
+        yield from _rec(0, t)
 
 
 def batch_to_device(batch_cpu: np.ndarray, xp):

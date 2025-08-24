@@ -75,8 +75,19 @@ def zin_batch(
       Z_eq = 1 / ( 1/Z_eq + Y_planar )      # 最終ノードに平面
       Z_in = Z_eq + Z_spread + Z_via        # Load までの直列
     """
-    B = int(counts_dev.shape[0])
-    n_types = len(Zc_list)
+
+    # Zc/カウントの列を order_idx で並べ替え（形状は不変）
+    if isinstance(order_idx, (list, tuple)):
+        ord_idx_cpu = np.asarray(order_idx, dtype=int)
+    else:
+        ord_idx_cpu = order_idx
+    # Zc を並べ替え
+    Zc_sorted = [Zc_list[int(j)] for j in ord_idx_cpu.tolist()]
+    # counts も列方向を並べ替え
+    counts_sorted = counts_dev[:, ord_idx_cpu]
+
+    B = int(counts_sorted.shape[0])
+    n_types = len(Zc_sorted)
     n_freq = int(f_dev.shape[0])
 
     w = 2.0 * xp.pi * f_dev
@@ -95,7 +106,7 @@ def zin_batch(
 
     # 段ループ（VRM 側 大容量 → Load 側 小容量）
     for pos, i in enumerate(rev.tolist()):
-        Zc_i = Zc_list[i]  # (F,)
+        Zc_i = Zc_sorted[i]  # (F,)
         Lmnt_i = xp.asarray(cap_specs[i].L_mnt if cap_specs else 0.0, dtype=dtype_c)
 
         # series: Z_stage を追加
@@ -103,7 +114,7 @@ def zin_batch(
 
         # シャント: Y_ck_total = count * (1 / (jω Lmnt + Zc))
         Y_unit = 1.0 / (1j * w * Lmnt_i + Zc_i)  # (F,)
-        cnt = counts_dev[:, i].reshape(B, 1).astype(dtype_c, copy=False)  # (B,1)
+        cnt = counts_sorted[:, i].reshape(B, 1).astype(dtype_c, copy=False)  # (B,1)
         Y_total = cnt * Y_unit.reshape(1, n_freq)  # (B,F)
 
         # 並列合成（アドミタンスで）

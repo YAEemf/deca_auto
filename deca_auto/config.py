@@ -23,7 +23,7 @@ class CapSpec:
     name: str
     model_path: Optional[str] = None  # None のとき解析式
     C: Optional[float] = None         # model_path があれば省略可
-    ESR: float = 15e-3
+    ESR: float = 20e-3
     ESL: float = 1e-9
     L_mnt: Optional[float] = None     # None の場合は cfg.L_mntN を使用
 
@@ -93,7 +93,7 @@ DEFAULT_USER_CONFIG: Dict[str, Any] = {
     "toml_path": "user_config.toml",
 
     # 周波数グリッド
-    "f_start": 1e2, "f_stop": 1e9, "num_points": 1024,
+    "f_start": 1e2, "f_stop": 1e9, "num_points": 768,
 
     # 評価帯域
     "f_L": 1e3, "f_H": 1e8, "z_target": 10e-3,
@@ -108,7 +108,7 @@ DEFAULT_USER_CONFIG: Dict[str, Any] = {
     "R_sN": 0.5e-3, "L_sN": 0.5e-9,
     "R_s": 0.5e-3, "L_s": 1e-9,
     "R_v": 0.5e-3, "L_v": 1e-9,
-    "R_p": 0.5e-3, "C_p": 5e-12,
+    "R_p": 0.5e-3, "C_p": 10e-12,
 
     # PySpice 用 DC バイアス
     "dc_bias": 3.3,
@@ -126,14 +126,14 @@ DEFAULT_USER_CONFIG: Dict[str, Any] = {
 
     # スコア重み
     "weights": {
-        "max": 0.9, "area": 0.75, "anti": 0.35, "flat": 0.15,
+        "max": 0.9, "area": 0.65, "anti": 0.35, "flat": 0.15,
         "under": -0.1, "parts": 0.0, "mc_worst": 1.0
     },
 
     # Monte Carlo
     "mc_enable": True, "mc_samples": 64,
-    "tol_C": 0.2, "tol_ESR": 0.2, "tol_ESL": 0.2,
-    "mlcc_derating": 0.15,
+    "tol_C": 0.3, "tol_ESR": 0.2, "tol_ESL": 0.2,
+    "mlcc_derating": 0.75,
 
     # 乱数シード
     "seed": 1234,

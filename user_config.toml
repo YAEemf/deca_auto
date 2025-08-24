@@ -5,14 +5,14 @@ toml_path = "user_config.toml"
 
 # ---- 周波数グリッド（logspace） ----
 f_start    = 1e2
-f_stop     = 1e9
-num_points = 1024
+f_stop     = 5e8
+num_points = 768
 
 # ---- 評価帯域 / 目標マスク ----
 # カスタムマスクを有効にすると f_L/f_H はその最小最大で上書き
 f_L      = 1e3
 f_H      = 1e8
-z_target = 0.010
+z_target = 10e-3
 
 # カスタムマスク
 z_custom_mask = [
@@ -26,7 +26,7 @@ z_custom_mask = [
 R_vrm = 10e-3
 L_vrm = 10e-9
 R_sN  = 0.1e-3
-L_sN  = 0.5e-9
+L_sN  = 1e-9
 L_mntN = 1e-9
 
 R_s = 0.1e-3
@@ -36,7 +36,7 @@ L_v = 1e-9
 
 # 平面モデル（直列 Rp + (C_p, tanδ)）
 R_p        = 0.5e-3
-C_p        = 5e-12
+C_p        = 10e-12
 tan_delta_p = 0.02
 
 # PySpice サンプリングでの DC バイアス（情報）
@@ -113,10 +113,10 @@ shuffle_evaluation    = true
 
 # ---- スコア重み（小さいほど良い。正の重みは減点、負は加点）----
 [weights]
-max      = 0.90
-area     = 0.90
+max      = 0.9
+area     = 0.65
 anti     = 0.35
-flat     = 0.45
+flat     = 0.15
 under    = 0.0
 parts    = 0.0
 mc_worst = 1.0
@@ -124,16 +124,16 @@ mc_worst = 1.0
 # ---- Monte Carlo（ロバスト化）----
 mc_enable     = true
 mc_samples    = 64
-tol_C         = 0.20
+tol_C         = 0.30
 tol_ESR       = 0.20
 tol_ESL       = 0.20
-mlcc_derating = 0.15
+mlcc_derating = 0.75
 
 # 共通乱数シード
 seed = 1234
 
 # ---- バックエンド / 精度 ----
-max_vram_ratio = 0.10  # VRAM 空き容量に対するバジェット比（memGetInfo の free に対して）
+max_vram_ratio = 0.01  # VRAM 空き容量に対するバジェット比（memGetInfo の free に対して）
 dtype_c = "complex64"  # GPU 複素数精度
 dtype_r = "float32"    # GPU 実数精度
 force_numpy = false    # true で強制（GPU持ってない人向け、ちゃんと動くか不明）
