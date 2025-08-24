@@ -81,28 +81,25 @@ def metrics_from_zin(Zin_dev, f_dev, m_eval, z_target, xp) -> Dict[str, "xp.ndar
     }
 
 
-def score_linear_comb(metrics: Dict[str, "xp.ndarray"], w: dict, parts_count, xp):
+def score_linear_comb(metrics, w: dict, parts_count, xp, norm=None):
     """
-    合成スコア（小さいほど良い）。内部で無次元化して重みの意味を安定化。
-    正の重み: 減点 / 負の重み: 加点（under_area を負にするのが一般的）
+    合成スコア（小さいほど良い）。norm=(logspan, zref) を受け取れば厳密正規化。
+    未指定なら従来の簡易正規化にフォールバック（後方互換）。
     """
-    # 正規化係数
-    # z_target と f_dev は metrics 内にないので、呼び出し側ではなくここでは
-    # 面積と高さのスケールだけを無次元化（zref/log span）は外から渡せないため、
-    # 近似として各バッチの中央値・logspanをメトリクスから推定するのは困難。
-    # → 呼び出し側で事前に logspan, zref を計算して渡す案もあったが、既存I/Oを保つため
-    #   ここでは「max_over を代表としたスケール」を使って安定化する。
-    #   ただし、精度重視なら make_eval_band_and_mask の戻りに zref/logspan を追加する拡張が適。
-    #   今回は既存I/F維持のため簡易正規化を行う。
     eps = xp.array(1e-12, dtype=metrics["max_over"].dtype)
-    zref = xp.maximum(xp.median(metrics["max_over"] + metrics["under_area"]*0), eps)  # 代表スケール
-    # logspan は面積の次元を消すために 1 とみなす（既に log f 台形則で比率は一定）
-    lspan = xp.array(1.0, dtype=zref.dtype)
 
-    # 無次元化
+    if norm is not None:
+        logspan, zref = norm
+        zref = xp.maximum(zref, eps)
+        logspan = xp.maximum(logspan, xp.array(1e-9, dtype=zref.dtype))
+    else:
+        # 旧フォールバック（後方互換）
+        zref = xp.maximum(xp.median(metrics["max_over"] + metrics["under_area"]*0), eps)
+        logspan = xp.array(1.0, dtype=zref.dtype)
+
     max_over_n   = metrics["max_over"]   / zref
-    area_over_n  = metrics["area_over"]  / (zref * lspan)
-    under_area_n = metrics["under_area"] / (zref * lspan)
+    area_over_n  = metrics["area_over"]  / (zref * logspan)
+    under_area_n = metrics["under_area"] / (zref * logspan)
     anti_h_n     = metrics["anti_height"]/ zref
     flat_std     = metrics["flat_std"]
 
