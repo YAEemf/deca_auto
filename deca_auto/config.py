@@ -23,7 +23,7 @@ class CapSpec:
     name: str
     model_path: Optional[str] = None  # None のとき解析式
     C: Optional[float] = None         # model_path があれば省略可
-    ESR: float = 20e-3
+    ESR: float = 15e-3
     ESL: float = 1e-9
     L_mnt: Optional[float] = None     # None の場合は cfg.L_mntN を使用
 
@@ -105,7 +105,7 @@ DEFAULT_USER_CONFIG: Dict[str, Any] = {
     "L_mntN": 1e-9,
     "tan_delta_p": 0.02,
     "R_vrm": 10e-3, "L_vrm": 10e-9,
-    "R_sN": 0.5e-3, "L_sN": 1e-9,
+    "R_sN": 0.5e-3, "L_sN": 0.5e-9,
     "R_s": 0.5e-3, "L_s": 1e-9,
     "R_v": 0.5e-3, "L_v": 1e-9,
     "R_p": 0.5e-3, "C_p": 5e-12,
@@ -115,7 +115,7 @@ DEFAULT_USER_CONFIG: Dict[str, Any] = {
 
     # コンデンサリスト
     "capacitors": [
-        {"name": "C_0603_0u1_default", "C": 0.1e-6, "ESR": 20e-3, "ESL": 0.8e-9},
+        # {"name": "C_0603_0u1_default", "C": 0.1e-6, "ESR": 20e-3, "ESL": 0.8e-9},
     ],
 
     # 組合せ探索

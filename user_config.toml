@@ -26,7 +26,7 @@ z_custom_mask = [
 R_vrm = 10e-3
 L_vrm = 10e-9
 R_sN  = 0.1e-3
-L_sN  = 1e-9
+L_sN  = 0.5e-9
 L_mntN = 1e-9
 
 R_s = 0.1e-3
@@ -62,44 +62,48 @@ dc_bias = 3.3
 # C = モデルを指定したら基本不要だが、読み込みに失敗した時に使用する
 
 [[capacitors]]
-name = "C_100n"
+name = "MLCC_100n"
 C    = 100e-9
 
 [[capacitors]]
-name = "C_1u"
+name = "MLCC_1u"
 C    = 1e-6
 
 [[capacitors]]
-name = "C_2.2u"
+name = "MLCC_2.2u"
 C    = 2.2e-6
 
 [[capacitors]]
-name = "C_3.3u"
+name = "MLCC_3.3u"
 C    = 3.3e-6
 
 [[capacitors]]
-name = "C_4.7u"
+name = "MLCC_4.7u"
 C    = 4.7e-6
 
 [[capacitors]]
-name = "C_10u"
+name = "MLCC_10u"
 C    = 10e-6
 
 [[capacitors]]
-name = "C_22u"
+name = "MLCC_22u"
 C    = 22e-6
 
 [[capacitors]]
-name = "C_33u"
+name = "MLCC_33u"
 C    = 33e-6
 
 [[capacitors]]
-name = "C_47u"
+name = "AlPoly_47u"
 C    = 47e-6
+ESR  = 50e-3
+ESL  = 3e-9
 
 [[capacitors]]
-name = "C_100u"
+name = "AlPoly_100u"
 C    = 100e-6
+ESR  = 50e-3
+ESL  = 3e-9
 
 # ---- 探索パラメータ ----
 max_total_parts       = 16
@@ -110,10 +114,10 @@ shuffle_evaluation    = true
 # ---- スコア重み（小さいほど良い。正の重みは減点、負は加点）----
 [weights]
 max      = 0.90
-area     = 0.75
+area     = 0.90
 anti     = 0.35
-flat     = 0.15
-under    = -0.10
+flat     = 0.45
+under    = 0.0
 parts    = 0.0
 mc_worst = 1.0
 
