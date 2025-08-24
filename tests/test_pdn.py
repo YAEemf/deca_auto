@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """
 3 種のコンデンサ [0.1uF, 1uF, 10uF] で PDN を組み、|Z_in| を両対数表示
-- 仕様準拠:
   * pdn.zin_batch() で (B,F) の Z_in を一括計算
   * 「段順序は最終ノード（Load側）から見て小容量 → 大容量」：pdn.sort_indices_by_C_small_to_large()
   * 直列/並列合成は pdn.build_static_parasitics() / pdn.zin_batch() 内で実装済み

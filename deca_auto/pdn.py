@@ -93,12 +93,9 @@ def zin_batch(
     # 形状をそろえる（B, F）
     Z_eq = xp.broadcast_to(Z_vrm, (B, n_freq)).astype(dtype_c, copy=False)
 
-    Zc_ord = [Zc_list[j] for j in order_idx.tolist()]
-    counts_ord = counts_dev[:, order_idx]
-
     # 段ループ（VRM 側 大容量 → Load 側 小容量）
     for pos, i in enumerate(rev.tolist()):
-        Zc_i = Zc_ord[i]  # (F,)
+        Zc_i = Zc_list[i]  # (F,)
         Lmnt_i = xp.asarray(cap_specs[i].L_mnt if cap_specs else 0.0, dtype=dtype_c)
 
         # series: Z_stage を追加
@@ -106,7 +103,7 @@ def zin_batch(
 
         # シャント: Y_ck_total = count * (1 / (jω Lmnt + Zc))
         Y_unit = 1.0 / (1j * w * Lmnt_i + Zc_i)  # (F,)
-        cnt = counts_ord[:, i].reshape(B, 1).astype(dtype_c, copy=False)  # (B,1)
+        cnt = counts_dev[:, i].reshape(B, 1).astype(dtype_c, copy=False)  # (B,1)
         Y_total = cnt * Y_unit.reshape(1, n_freq)  # (B,F)
 
         # 並列合成（アドミタンスで）

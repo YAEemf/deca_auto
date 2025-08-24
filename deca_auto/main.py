@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 from . import config as cfgmod
 from .backend import select_xp, decide_max_chunk
-from .freqgrid import make_freq_grid, make_eval_band_and_mask, compute_norm_params
+from .freqgrid import make_freq_grid, make_eval_band_and_mask
 from .spice_model import build_capacitor_model
 from .comb_gen import enumerate_count_vectors, batch_to_device
 from .pdn import build_static_parasitics, sort_indices_by_C_small_to_large, zin_batch
@@ -56,7 +56,6 @@ def main(toml_path: str | None = None):
         # 3) グリッド・評価帯域
         f_dev = make_freq_grid(cfg, xp)
         m_eval, z_target = make_eval_band_and_mask(cfg, f_dev, xp)
-        logspan, zref = compute_norm_params(f_dev, z_target, m_eval, xp)
         f_cpu = to_cpu(f_dev)
         target_poly = _make_target_polyline(cfg)
 
@@ -145,15 +144,7 @@ def main(toml_path: str | None = None):
 
             # グローバル辞書から改めて上位kを作る（安定化）
             items = list(global_candidates.items())
-            items.sort(key=lambda kv: (
-                kv[1]["score"],
-                kv[1]["metrics"]["max_over"],
-                kv[1]["metrics"]["area_over"],
-                kv[1]["metrics"]["anti_count"],
-                kv[1]["metrics"]["anti_height"],
-                kv[1]["metrics"]["flat_std"],
-            ))
-            top_items = items[: cfg.top_k]
+            items.sort(key=lambda kv: kv[1]["score"])
             top_items = items[: cfg.top_k]
 
             global_best_scores  = np.asarray([it[1]["score"] for it in top_items], dtype=float)
@@ -221,7 +212,7 @@ def main(toml_path: str | None = None):
                                         cap_specs=cfg.capacitors, xp=xp, dtype_c=dtype_c)
                     mets = metrics_from_zin(Zin_dev, f_dev, m_eval, z_target, xp)
                     parts_count = counts_dev.sum(axis=1)
-                    base_score = score_linear_comb(mets, cfg.weights, parts_count, xp, norm=(logspan, zref))
+                    base_score = score_linear_comb(mets, cfg.weights, parts_count, xp)
                     if cfg.mc_enable and cfg.mc_samples > 0:
                         mc_worst = monte_carlo_worst(Zc_list_dev, counts_dev, cfg, f_dev,
                                                      parasitics, order_idx, cap_specs=cfg.capacitors, xp=xp, dtype_c=dtype_c)
@@ -253,7 +244,7 @@ def main(toml_path: str | None = None):
                                     cap_specs=cfg.capacitors, xp=xp, dtype_c=dtype_c)
                 mets = metrics_from_zin(Zin_dev, f_dev, m_eval, z_target, xp)
                 parts_count = counts_dev.sum(axis=1)
-                base_score = score_linear_comb(mets, cfg.weights, parts_count, xp, norm=(logspan, zref))
+                base_score = score_linear_comb(mets, cfg.weights, parts_count, xp)
                 if cfg.mc_enable and cfg.mc_samples > 0:
                     mc_worst = monte_carlo_worst(Zc_list_dev, counts_dev, cfg, f_dev,
                                                  parasitics, order_idx, cap_specs=cfg.capacitors, xp=xp, dtype_c=dtype_c)

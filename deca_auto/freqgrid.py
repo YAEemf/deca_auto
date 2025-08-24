@@ -12,24 +12,20 @@ import math
 
 from .config import Config
 
-def compute_norm_params(f_dev, z_target, m_eval, xp):
+def _loglog_interp(x: np.ndarray, xp: np.ndarray, yp: np.ndarray) -> np.ndarray:
     """
-    戻り値: (logspan, zref)
-      logspan = ln(f_H/f_L)（評価帯域端点から計算。最小1e-9でガード）
-      zref    = 評価帯域内 z_target の中央値（NaN除外。最小1e-12でガード）
+    log-log 線形補間（x, xp, yp はすべて > 0）
+    - x: 新しい x（昇順）
+    - xp: 既知の x
+    - yp: 既知の y
+    戻り値: y(x)（線形補間。外挿は端値保持）
     """
-    f = f_dev[m_eval]
-    if f.size >= 2:
-        logspan = xp.log(f[-1]) - xp.log(f[0])
-        logspan = xp.maximum(logspan, xp.array(1e-9, dtype=f.dtype))
-    else:
-        logspan = xp.array(1.0, dtype=f.dtype)
-
-    zt = z_target[m_eval]
-    # nanmedian は CuPy/NumPy 双方にあり（2024+）
-    zref = xp.nanmedian(zt)
-    zref = xp.maximum(zref, xp.array(1e-12, dtype=zt.dtype))
-    return logspan, zref
+    lx = np.log10(x)
+    lxp = np.log10(xp)
+    lyp = np.log10(yp)
+    # numpy.interp は一次元で高速（端は外挿せず端値保持）
+    ly = np.interp(lx, lxp, lyp)
+    return np.power(10.0, ly)
 
 
 def make_freq_grid(cfg: Config, xp) -> "xp.ndarray":
