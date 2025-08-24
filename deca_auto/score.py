@@ -5,8 +5,8 @@
 - monte_carlo_worst(): 乱数摂動で最悪スコア（必要に応じて RLC 再評価）
 - topk_indices(): GPU 上で Top-k を抽出（argpartition→argsort）
 注意:
-  * CuPy の argpartition は実装上「実質フルソート」で kind/order を未サポート（NumPyと挙動差）。:contentReference[oaicite:1]{index=1}
-  * 乱数は xp.random.default_rng(seed)（CuPy は XORWOW）を使用。:contentReference[oaicite:2]{index=2}
+  * CuPy の argpartition は実装上「実質フルソート」で kind/order を未サポート（NumPyと挙動差）。
+  * 乱数は xp.random.default_rng(seed)（CuPy は XORWOW）を使用。
 """
 
 from __future__ import annotations
@@ -165,14 +165,14 @@ def monte_carlo_worst(
 ):
     """
     Monte Carlo による最悪スコア（小さいほど良い）を返す
-    - 乱数: xp.random.default_rng(cfg.seed)（CuPy は XORWOW）:contentReference[oaicite:4]{index=4}
+    - 乱数: xp.random.default_rng(cfg.seed)（CuPy は XORWOW）
     - C/ESR/ESL に相対公差、mlcc_derating を適用
     - C が既知 (cap.C is not None) の場合: 解析式で再合成（厳密）
       それ以外（VF モデル等）  : 直列 ΔR, ΔL のみ摂動（近似）
     戻り値: worst: (B,)  各候補の MC 最悪スコア
     """
 
-    rng = xp.random.default_rng(int(cfg.seed))  # CuPy: XORWOW。NumPy: PCG64。:contentReference[oaicite:5]{index=5}
+    rng = xp.random.default_rng(int(cfg.seed)) 
     B = int(counts_dev.shape[0])
     n_types = len(Zc_list_base)
 

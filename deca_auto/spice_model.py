@@ -62,8 +62,8 @@ def sample_impedance_with_pyspice(
     PySpice で AC サンプリング
     回路: GND -- Iac(1A) -- (n1) -- X(dut) -- GND
     - .include に model_path を渡し、最初の 2端子 .SUBCKT を DUT とする
-    - AC 解析は probes=['n1'] 指定が必須（PySpice 仕様）:contentReference[oaicite:3]{index=3}
-    - Iac は HighLevelElement.SinusoidalCurrentSource(ac_magnitude=1) を使用（ac 値必須）:contentReference[oaicite:4]{index=4}
+    - AC 解析は probes=['n1'] 指定が必須（PySpice 仕様）
+    - Iac は HighLevelElement.SinusoidalCurrentSource(ac_magnitude=1) を使用（ac 値必須）
     出力:
       f_s_cpu: サンプル周波数（log sweep）
       Zc_s_cpu: サンプル Zc（V/I、I=1Aなので V=Z）
@@ -96,7 +96,7 @@ def sample_impedance_with_pyspice(
             f.write(str(circuit))
 
         # probes 保存（v(n1) を含める）
-        simulator.save(["all", f"v({n1})"])  # :contentReference[oaicite:5]{index=5}
+        simulator.save(["all", f"v({n1})"]) 
 
         # PySpice の ac は対数掃引をサポート（variation='dec'）
         f_start = float(np.min(f_cpu))

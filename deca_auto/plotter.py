@@ -56,7 +56,7 @@ def plot_caps_Zc(ax1, f_cpu: np.ndarray, Zc_cpu_dict: Dict[str, np.ndarray]):
     if ax1.has_data():
         ax1.legend(loc="upper left", fontsize=8, framealpha=0.5)
         ax1.set_xlim(float(f_cpu[0]), float(f_cpu[-1]))
-        ax1.relim(); ax1.autoscale_view(scalex=False, scaley=True)  # Y オート  :contentReference[oaicite:3]{index=3}
+        ax1.relim(); ax1.autoscale_view(scalex=False, scaley=True)
 
     ax1.figure.canvas.draw(); ax1.figure.canvas.flush_events()
 

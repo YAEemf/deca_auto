@@ -65,11 +65,11 @@ def write_topk_result(
                         ws2.write(r, c, str(val))
 
         # --- グラフ（Scatter のみ X-log が効く） ---
-        chart = wb.add_chart({"type": "scatter"})   # :contentReference[oaicite:4]{index=4}
+        chart = wb.add_chart({"type": "scatter"})
         chart.set_legend({"position": "top"})
         chart.set_title({"name": "Top-k |Zin| (Log-Log)"})
-        chart.set_x_axis({"name": "Frequency [Hz]", "log_base": 10})  # :contentReference[oaicite:5]{index=5}
-        chart.set_y_axis({"name": "|Zin| [Ohm]", "log_base": 10})     # :contentReference[oaicite:6]{index=6}
+        chart.set_x_axis({"name": "Frequency [Hz]", "log_base": 10})
+        chart.set_y_axis({"name": "|Zin| [Ohm]", "log_base": 10})
 
         n_rows = len(f_cpu)
         for idx, (label, _Zin) in enumerate(topk_series):
