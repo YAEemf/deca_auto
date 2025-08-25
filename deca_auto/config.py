@@ -1,348 +1,349 @@
-"""
-ユーザー設定の既定値定義・TOML読み込み・検証
-- load_user_config(): TOML が指すキーのみ上書きして dict を返す
-- validate_config(): 値検証と正規化を行い、Config(dataclass) を返す
-他モジュール互換:
-  backend.select_xp(), freqgrid.make_freq_grid(), spice_model.build_capacitor_model(),
-  rlc_model.analytic_Zc(), pdn.*, score.*, plotter.*, excel_out.* が参照するキーを網羅
-"""
+# -*- coding: utf-8 -*-
+# deca_auto/config.py
 from __future__ import annotations
-
 from dataclasses import dataclass, field
-from typing import Optional, List, Tuple, Dict, Any
+from typing import List, Optional, Tuple, Dict, Any
 import math
-import pathlib
+import copy
 import sys
 import traceback
 
-import tomllib
+try:
+    import tomllib  # Python 3.11+
+except Exception:  # pragma: no cover
+    tomllib = None  # ユーザー環境に合わせる
 
-@dataclass(frozen=True)
+from .utils import get_logger
+
+
+@dataclass
 class CapSpec:
-    """コンデンサ種別の定義（SPICE / 解析式フォールバック）"""
     name: str
-    model_path: Optional[str] = None  # None のとき解析式
-    C: Optional[float] = None         # model_path があれば省略可
+    model_path: Optional[str] = None
+    C: Optional[float] = None
     ESR: float = 20e-3
     ESL: float = 1e-9
-    L_mnt: Optional[float] = None     # None の場合は cfg.L_mntN を使用
+    L_mnt: Optional[float] = None  # 未指定時は L_mntN を使用
 
 
-@dataclass(frozen=True)
+@dataclass
 class Config:
-    toml_path: Optional[str]
-
-    f_start: float
-    f_stop: float
-    num_points: int
-
-    f_L: float
-    f_H: float
-
-    z_target: float
-    z_custom_mask: Optional[List[Tuple[float, float]]]
-
-    R_vrm: float
-    L_vrm: float
-    R_sN: float
-    L_sN: float
-    L_mntN: float
-    R_s: float
-    L_s: float
-    R_v: float
-    L_v: float
-    R_p: float
-    C_p: float
-    tan_delta_p: float
-
-    dc_bias: float
-
-    capacitors: List[CapSpec]
-
-    max_total_parts: int
-    min_total_parts_ratio: float
-    top_k: int
-    shuffle_evaluation: bool
-
-    weights: Dict[str, float]
-
-    mc_enable: bool
-    mc_samples: int
-    tol_C: float
-    tol_ESR: float
-    tol_ESL: float
-    mlcc_derating: float
-
-    seed: int
-
-    max_vram_ratio: float
-    dtype_c: str
-    dtype_r: str
-    force_numpy: bool
-
-    plot_view: bool
-    plot_min_interval_s: float
-    plot_force_update_interval_s: float
-
-    excel_path: Optional[str]
-    excel_name: str
-
-
-DEFAULT_USER_CONFIG: Dict[str, Any] = {
-    # TOML のパス（情報）
-    "toml_path": "user_config.toml",
-
     # 周波数グリッド
-    "f_start": 1e2, "f_stop": 1e9, "num_points": 768,
+    f_start: float = 1e2
+    f_stop: float = 1e9
+    num_points: int = 768
 
-    # 評価帯域
-    "f_L": 1e3, "f_H": 1e8, "z_target": 10e-3,
-    "z_custom_mask": [
-        [1e3, 10e-3], [1e5, 10e-3], [2e6, 30e-3], [1e8, 1.5]
-    ],
-
-    # PDN 寄生成分
-    "L_mntN": 1e-9,
-    "tan_delta_p": 0.02,
-    "R_vrm": 10e-3, "L_vrm": 10e-9,
-    "R_sN": 0.5e-3, "L_sN": 0.5e-9,
-    "R_s": 0.5e-3, "L_s": 1e-9,
-    "R_v": 0.5e-3, "L_v": 1e-9,
-    "R_p": 0.5e-3, "C_p": 10e-12,
-
-    # PySpice 用 DC バイアス
-    "dc_bias": 3.3,
-
-    # コンデンサリスト
-    "capacitors": [
-        # {"name": "C_0603_0u1_default", "C": 0.1e-6, "ESR": 20e-3, "ESL": 0.8e-9},
-    ],
-
-    # 組合せ探索
-    "max_total_parts": 16,
-    "min_total_parts_ratio": 0.3,
-    "top_k": 10,
-    "shuffle_evaluation": True,
-
-    # スコア重み
-    "weights": {
-        "max": 0.9, "area": 0.65, "anti": 0.35, "flat": 0.15,
-        "under": -0.1, "parts": 0.0, "mc_worst": 1.0
-    },
-
-    # Monte Carlo
-    "mc_enable": True, "mc_samples": 64,
-    "tol_C": 0.3, "tol_ESR": 0.2, "tol_ESL": 0.2,
-    "mlcc_derating": 0.75,
-
-    # 乱数シード
-    "seed": 1234,
-
-    # GPU関連
-    "max_vram_ratio": 0.1,
-    "dtype_c": "complex64",
-    "dtype_r": "float32",
-    "force_numpy": False,
-
-    # グラフ関連
-    "plot_view": True,
-    "plot_min_interval_s": 0.5,
-    "plot_force_update_interval_s": 5.0,
-
-    # Excel
-    "excel_path": None,
-    "excel_name": "dcap_result",
-}
-
-def load_user_config(toml_path: Optional[str]) -> Dict[str, Any]:
-    """
-    TOML のキーのみ DEFAULT_USER_CONFIG に上書きして dict を返す
-    - toml_path が None またはファイル無しなら DEFAULT をそのまま返す
-    例外は上位で traceback.print_exc() される前提
-    """
-    cfg = DEFAULT_USER_CONFIG.copy()
-    if not toml_path:
-        return cfg
-
-    try:
-        p = pathlib.Path(toml_path).expanduser()
-        if p.is_file():
-            with p.open("rb") as f:
-                toml_data = tomllib.load(f)
-            # TOML に存在するキーのみ上書き
-            for k, v in toml_data.items():
-                if k in cfg:
-                    cfg[k] = v
-        # ファイルが無い場合は既定を使用（通知は main 側でログ）
-    except Exception:
-        traceback.print_exc()
-    return cfg
-
-
-def validate_config(cfg: Dict[str, Any]) -> Config:
-    """
-    値検証・正規化・型付け（Config dataclass を返す）
-    - カスタム目標マスク指定時：f_L/f_H はマスクの min/max で上書き
-    - 各コンデンサの省略値（ESR/ESL/L_mnt）を規約通り適用
-    """
-    # 周波数グリッド
-    f_start = float(cfg["f_start"])
-    f_stop = float(cfg["f_stop"])
-    num_points = int(cfg["num_points"])
-    if not (f_start > 0 and f_stop > f_start and num_points >= 16):
-        raise ValueError("周波数グリッド設定が不正です。")
-
-    # 評価帯域とマスク
-    z_custom_mask = cfg.get("z_custom_mask")
-    f_L = float(cfg["f_L"])
-    f_H = float(cfg["f_H"])
-    z_target = float(cfg["z_target"])
-    if z_custom_mask:
-        # 折れ線点の検証とソート
-        pts = []
-        for it in z_custom_mask:
-            f, z = float(it[0]), float(it[1])
-            if f <= 0 or z <= 0:
-                raise ValueError("z_custom_mask の周波数/インピーダンスは正である必要があります。")
-            pts.append((f, z))
-        pts.sort(key=lambda x: x[0])
-        z_custom_mask = pts
-        f_L, f_H = pts[0][0], pts[-1][0]
-
-    if not (f_start <= f_L < f_H <= f_stop):
-        raise ValueError("評価帯域 f_L/f_H は f_start/f_stop の範囲に含まれる必要があります。")
+    # 評価帯域・目標
+    f_L: float = 1e3
+    f_H: float = 1e8
+    z_target: float = 10e-3
+    z_custom_mask: Optional[List[Tuple[float, float]]] = None  # [[f, Z], ...]
 
     # PDN 寄生
-    def _pos(x, name):
-        x = float(x)
-        if x < 0:
-            raise ValueError(f"{name} は負であってはなりません。")
-        return x
+    R_vrm: float = 15e-3
+    L_vrm: float = 10e-9
+    R_sN: float = 0.25e-3
+    L_sN: float = 1e-9
+    L_mntN: float = 1e-9
+    R_s: float = 0.1e-3
+    L_s: float = 1e-9
+    R_v: float = 0.1e-3
+    L_v: float = 1e-9
+    R_p: float = 1e-3
+    C_p: float = 10e-12
+    tan_delta_p: float = 0.02
 
-    R_vrm = _pos(cfg["R_vrm"], "R_vrm")
-    L_vrm = _pos(cfg["L_vrm"], "L_vrm")
-    R_sN = _pos(cfg["R_sN"], "R_sN")
-    L_sN = _pos(cfg["L_sN"], "L_sN")
-    L_mntN = _pos(cfg["L_mntN"], "L_mntN")
-    R_s = _pos(cfg["R_s"], "R_s")
-    L_s = _pos(cfg["L_s"], "L_s")
-    R_v = _pos(cfg["R_v"], "R_v")
-    L_v = _pos(cfg["L_v"], "L_v")
-    R_p = _pos(cfg["R_p"], "R_p")
-    C_p = _pos(cfg["C_p"], "C_p")
-    tan_delta_p = _pos(cfg["tan_delta_p"], "tan_delta_p")
-    dc_bias = float(cfg["dc_bias"])
+    # Spice
+    dc_bias: float = 3.3
 
     # コンデンサ
-    caps_raw = cfg.get("capacitors", [])
-    capacitors: List[CapSpec] = []
-    for item in caps_raw:
-        name = str(item["name"])
-        model_path = item.get("model_path")
-        C = item.get("C", None)
-        ESR = float(item.get("ESR", 20e-3))
-        ESL = float(item.get("ESL", 1e-9))
-        L_mnt = item.get("L_mnt", None)
-        if C is not None:
-            C = float(C)
-            if C <= 0:
-                raise ValueError(f"{name}: C は正である必要があります。")
-        if L_mnt is not None:
-            L_mnt = float(L_mnt)
+    capacitors: List[CapSpec] = field(default_factory=list)
 
-        capacitors.append(
-            CapSpec(
-                name=name, model_path=model_path, C=C,
-                ESR=ESR, ESL=ESL, L_mnt=L_mnt
-            )
-        )
+    # 組合せ探索
+    max_total_parts: int = 12
+    min_total_parts_ratio: float = 0.3
+    top_k: int = 10
+    shuffle_evaluation: bool = True
 
-    # 探索境界
-    max_total_parts = int(cfg["max_total_parts"])
-    min_total_parts_ratio = float(cfg["min_total_parts_ratio"])
-    if not (max_total_parts >= 1 and 0.0 <= min_total_parts_ratio <= 1.0):
-        raise ValueError("max_total_parts / min_total_parts_ratio が不正です。")
-    if int(cfg["top_k"]) < 1:
-        raise ValueError("top_k は 1 以上。")
-    top_k = int(cfg["top_k"])
-    shuffle_evaluation = bool(cfg["shuffle_evaluation"])
-
-    # スコア重み（必要キー存在チェック）
-    weights = dict(cfg["weights"])
-    for k in ("max", "area", "anti", "flat", "under", "parts", "mc_worst"):
-        if k not in weights:
-            raise ValueError(f"weights に {k} が不足しています。")
+    # スコア重み
+    weights: Dict[str, float] = field(default_factory=lambda: {
+        "max": 0.9,
+        "area": 0.65,
+        "anti": 0.35,
+        "flat": 0.15,
+        "under": -0.2,
+        "parts": 0.0,
+        "mc_worst": 1.0,
+    })
 
     # Monte Carlo
-    mc_enable = bool(cfg["mc_enable"])
-    mc_samples = int(cfg["mc_samples"])
-    tol_C = float(cfg["tol_C"])
-    tol_ESR = float(cfg["tol_ESR"])
-    tol_ESL = float(cfg["tol_ESL"])
-    mlcc_derating = float(cfg["mlcc_derating"])
-    seed = int(cfg["seed"])
+    mc_enable: bool = True
+    mc_samples: int = 64
+    tol_C: float = 0.2
+    tol_ESR: float = 0.2
+    tol_ESL: float = 0.2
+    mlcc_derating: float = 0.15
 
-    # backend・精度
-    max_vram_ratio = float(cfg["max_vram_ratio"])
-    if not (0.0 < max_vram_ratio <= 1.0):
-        raise ValueError("max_vram_ratio は 0–1 の範囲。")
-    dtype_c = str(cfg["dtype_c"])
-    dtype_r = str(cfg["dtype_r"])
-    force_numpy = bool(cfg["force_numpy"])
+    # 乱数・デバイス
+    seed: int = 1234
+    max_vram_ratio: float = 0.9
+    dtype_c: str = "complex64"
+    dtype_r: str = "float32"
+    force_numpy: bool = False
 
-    # plot / excel
-    plot_view = bool(cfg["plot_view"])
-    plot_min_interval_s = float(cfg["plot_min_interval_s"])
-    plot_force_update_interval_s = float(cfg["plot_force_update_interval_s"])
-    excel_path = cfg["excel_path"]
-    if excel_path is not None:
-        excel_path = str(excel_path)
-    excel_name = str(cfg["excel_name"])
+    # 表示・Excel
+    plot_view: bool = True
+    plot_min_interval_s: float = 0.5
+    plot_force_update_interval_s: float = 5.0
+    excel_path: Optional[str] = None
+    excel_name: str = "dcap_result"
 
-    # L_mnt が未指定の CapSpec に対して既定 L_mntN を適用
-    caps_resolved: List[CapSpec] = []
-    for c in capacitors:
-        caps_resolved.append(
-            CapSpec(
-                name=c.name, model_path=c.model_path, C=c.C,
-                ESR=c.ESR, ESL=c.ESL, L_mnt=(c.L_mnt if c.L_mnt is not None else L_mntN)
-            )
-        )
+_DEFAULT = Config()  # 参照用（変更しない）
 
-    return Config(
-        toml_path=cfg.get("toml_path"),
 
-        f_start=f_start, f_stop=f_stop, num_points=num_points,
-        f_L=f_L, f_H=f_H,
-        z_target=z_target, z_custom_mask=z_custom_mask,
+_TOPLEVEL_KEYS = {
+    "f_start", "f_stop", "num_points",
+    "f_L", "f_H", "z_target", "z_custom_mask",
+    "R_vrm", "L_vrm", "R_sN", "L_sN", "L_mntN", "R_s", "L_s", "R_v", "L_v",
+    "R_p", "C_p", "tan_delta_p",
+    "dc_bias",
+    "max_total_parts", "min_total_parts_ratio", "top_k", "shuffle_evaluation",
+    "weights",  # weights は table
+    "mc_enable", "mc_samples", "tol_C", "tol_ESR", "tol_ESL", "mlcc_derating",
+    "seed", "max_vram_ratio", "dtype_c", "dtype_r", "force_numpy",
+    "plot_view", "plot_min_interval_s", "plot_force_update_interval_s",
+    "excel_path", "excel_name",
+    "capacitors",  # AOT
+}
 
-        R_vrm=R_vrm, L_vrm=L_vrm,
-        R_sN=R_sN, L_sN=L_sN, L_mntN=L_mntN,
-        R_s=R_s, L_s=L_s, R_v=R_v, L_v=L_v,
-        R_p=R_p, C_p=C_p, tan_delta_p=tan_delta_p,
+_WEIGHT_KEYS = {"max", "area", "anti", "flat", "under", "parts", "mc_worst"}
 
-        dc_bias=dc_bias,
-        capacitors=caps_resolved,
+def _deep_merge(dst: dict, src: dict) -> dict:
+    """
+    dict の部分上書きマージ。
+    - src にあるキーだけ dst に反映（既定の保持）
+    - ネストは再帰。ただし list は置換（AOT など）
+    """
+    for k, v in src.items():
+        if isinstance(v, dict) and isinstance(dst.get(k), dict):
+            _deep_merge(dst[k], v)
+        else:
+            dst[k] = copy.deepcopy(v)
+    return dst
 
-        max_total_parts=max_total_parts,
-        min_total_parts_ratio=min_total_parts_ratio,
-        top_k=top_k,
-        shuffle_evaluation=shuffle_evaluation,
+def _as_float(x) -> float:
+    try:
+        return float(x)
+    except Exception:
+        return x
 
-        weights=weights,
+def _as_bool(x) -> bool:
+    if isinstance(x, bool):
+        return x
+    if isinstance(x, (int, float)):
+        return bool(x)
+    s = str(x).strip().lower()
+    return s in ("1", "true", "yes", "on")
 
-        mc_enable=mc_enable, mc_samples=mc_samples,
-        tol_C=tol_C, tol_ESR=tol_ESR, tol_ESL=tol_ESL,
-        mlcc_derating=mlcc_derating,
+def _ensure_list_tuple_pairs(v) -> Optional[List[Tuple[float, float]]]:
+    if v is None:
+        return None
+    out = []
+    for p in v:
+        if isinstance(p, (list, tuple)) and len(p) == 2:
+            out.append((float(p[0]), float(p[1])))
+    return out or None
 
-        seed=seed,
-
-        max_vram_ratio=max_vram_ratio,
-        dtype_c=dtype_c, dtype_r=dtype_r, force_numpy=force_numpy,
-
-        plot_view=plot_view,
-        plot_min_interval_s=plot_min_interval_s,
-        plot_force_update_interval_s=plot_force_update_interval_s,
-
-        excel_path=excel_path, excel_name=excel_name,
+def _san_cap(cap: dict, l_mntN_default: float) -> CapSpec:
+    # 許容キーだけ取り出し
+    c = CapSpec(
+        name=str(cap.get("name")),
+        model_path=cap.get("model_path"),
+        C=_as_float(cap.get("C")) if cap.get("C") is not None else None,
+        ESR=_as_float(cap.get("ESR")) if cap.get("ESR") is not None else 20e-3,
+        ESL=_as_float(cap.get("ESL")) if cap.get("ESL") is not None else 1e-9,
+        L_mnt=_as_float(cap.get("L_mnt")) if cap.get("L_mnt") is not None else l_mntN_default,
     )
+    if not c.name:
+        raise ValueError("capacitors[].name は必須です")
+    return c
+
+
+def _load_toml_as_dict(path: Optional[str]) -> dict:
+    if not path:
+        return {}
+    if tomllib is None:
+        raise RuntimeError("tomllib が利用できません。Python 3.11+ が必要です。")
+    with open(path, "rb") as f:
+        return tomllib.load(f)
+
+def _hoist_orphan_keys(cfg_raw: dict, logger) -> dict:
+    """
+    誤って [[capacitors]] や [weights] の“中に”書かれたトップレベル用キーを
+    トップレベルへ移してから返す。
+    - 既にトップレベルに同名キーがあればトップレベルを優先し、
+      セクション内の値は無視して削除。
+    """
+    out = copy.deepcopy(cfg_raw)
+
+    if isinstance(out.get("capacitors"), list):
+        fixed_caps = []
+        for idx, cap in enumerate(out["capacitors"]):
+            if not isinstance(cap, dict):
+                continue
+            cap = cap.copy()
+            stray = []
+            for k in list(cap.keys()):
+                if k in _TOPLEVEL_KEYS and k not in {"capacitors", "weights"}:
+                    # 迷い込んだトップレベル用キー
+                    stray.append((k, cap.pop(k)))
+            if stray:
+                for k, v in stray:
+                    if k not in out:  # トップレベルに未定義なら救出
+                        out[k] = v
+                        logger.warning(f"[config] [[capacitors]] 内の '{k}' をトップレベルへ移動しました。")
+                    else:
+                        logger.warning(f"[config] [[capacitors]] 内の '{k}' を無視（トップレベル優先）。")
+            fixed_caps.append(cap)
+        out["capacitors"] = fixed_caps
+
+    if isinstance(out.get("weights"), dict):
+        w = out["weights"].copy()
+        for k in list(w.keys()):
+            if k in _TOPLEVEL_KEYS and k not in _WEIGHT_KEYS:
+                v = w.pop(k)
+                if k not in out:
+                    out[k] = v
+                    logger.warning(f"[config] [weights] 内の '{k}' をトップレベルへ移動しました。")
+                else:
+                    logger.warning(f"[config] [weights] 内の '{k}' を無視（トップレベル優先）。")
+        out["weights"] = w
+
+    return out
+
+
+def load_user_config(toml_path: Optional[str]) -> dict:
+    """
+    TOML を読み込み、**迷い込んだトップレベル用キーを救出**した上で dict を返す。
+    返す dict は **ユーザー指定分のみ**（既定は含めない）。
+    """
+    logger = get_logger()
+    try:
+        raw = _load_toml_as_dict(toml_path)
+        if not raw:
+            return {}
+        raw = _hoist_orphan_keys(raw, logger)
+        return raw
+    except Exception:
+        traceback.print_exc()
+        # エラー時は空 dict（既定で動作させる）
+        return {}
+
+
+def validate_config(raw: dict) -> Config:
+    """
+    既定 Config に raw を **ディープマージ**して最終 Config を返す。
+    - 未指定は既定を保持
+    - list は置換（capacitors）
+    - 値の型を最低限バリデート
+    """
+    logger = get_logger()
+    base = copy.deepcopy(_DEFAULT).__dict__
+    user = copy.deepcopy(raw)
+
+    # [[capacitors]]: list でなければ無視
+    caps_raw = user.get("capacitors")
+    if caps_raw is not None and not isinstance(caps_raw, list):
+        logger.warning("[config] 'capacitors' は配列（[[capacitors]])で指定してください。無視します。")
+        user.pop("capacitors", None)
+
+    # [weights]: dict 部分更新に対応（深いマージ）
+    if "weights" in user and not isinstance(user["weights"], dict):
+        logger.warning("[config] 'weights' はテーブル（[weights])で指定してください。無視します。")
+        user.pop("weights", None)
+
+    # ディープマージ（list は置換）
+    merged = _deep_merge(base, user)
+
+    # ---- 型整形・下限上限 ----
+    # z_custom_mask
+    merged["z_custom_mask"] = _ensure_list_tuple_pairs(merged.get("z_custom_mask"))
+
+    # bool / float / int
+    merged["shuffle_evaluation"] = _as_bool(merged.get("shuffle_evaluation"))
+    merged["mc_enable"] = _as_bool(merged.get("mc_enable"))
+    merged["force_numpy"] = _as_bool(merged.get("force_numpy"))
+    for k in ("f_start", "f_stop", "f_L", "f_H", "z_target", "dc_bias", "max_vram_ratio",
+              "plot_min_interval_s", "plot_force_update_interval_s"):
+        merged[k] = _as_float(merged.get(k))
+    for k in ("num_points", "max_total_parts", "top_k", "mc_samples", "seed"):
+        try:
+            merged[k] = int(merged.get(k))
+        except Exception:
+            pass
+    for k in ("min_total_parts_ratio", "tol_C", "tol_ESR", "tol_ESL", "mlcc_derating"):
+        merged[k] = _as_float(merged.get(k))
+
+    # 範囲チェック
+    merged["num_points"] = max(4, int(merged["num_points"]))
+    merged["min_total_parts_ratio"] = float(min(1.0, max(0.0, merged["min_total_parts_ratio"])))
+    merged["max_total_parts"] = max(1, int(merged["max_total_parts"]))
+    merged["top_k"] = max(1, int(merged["top_k"]))
+    merged["max_vram_ratio"] = float(min(0.99, max(0.1, merged["max_vram_ratio"])))
+
+    # dtype
+    if merged.get("dtype_c") not in ("complex64", "complex128"):
+        logger.warning("[config] dtype_c は 'complex64' か 'complex128' を推奨します。既定を使用します。")
+        merged["dtype_c"] = _DEFAULT.dtype_c
+    if merged.get("dtype_r") not in ("float32", "float64"):
+        logger.warning("[config] dtype_r は 'float32' か 'float64' を推奨します。既定を使用します。")
+        merged["dtype_r"] = _DEFAULT.dtype_r
+
+    # weights: 未知キーは警告して無視
+    w = merged.get("weights", {})
+    if w:
+        w_clean = {}
+        for k, v in w.items():
+            if k in _WEIGHT_KEYS:
+                w_clean[k] = float(v)
+            else:
+                logger.warning(f"[config] [weights].{k} は未知キーのため無視します。")
+        # 欠損は既定を残す
+        merged["weights"] = {**_DEFAULT.weights, **w_clean}
+    else:
+        merged["weights"] = copy.deepcopy(_DEFAULT.weights)
+
+    # capacitors: 正規化
+    caps_out: List[CapSpec] = []
+    if isinstance(caps_raw, list):
+        for i, c in enumerate(caps_raw):
+            try:
+                caps_out.append(_san_cap(c, merged["L_mntN"]))
+            except Exception as e:
+                logger.warning(f"[config] capacitors[{i}] を無視します: {e}")
+    merged["capacitors"] = caps_out
+
+    # 依存関係チェック：評価帯域
+    if merged["z_custom_mask"] is not None:
+        # カスタムマスクの min/max が評価帯域を上書きする仕様
+        fs = [p[0] for p in merged["z_custom_mask"]]
+        fmin, fmax = min(fs), max(fs)
+        if fmax <= fmin:
+            logger.warning("[config] z_custom_mask の周波数が不正です。既定の評価帯域を使用します。")
+        else:
+            merged["f_L"], merged["f_H"] = float(fmin), float(fmax)
+
+    # コンビ枚数の下限（仕様どおり ceil）
+    t_min = max(1, math.ceil(merged["max_total_parts"] * merged["min_total_parts_ratio"]))
+    merged["_t_min"] = int(t_min)  # comb_gen 側仕様の明示（デバッグ用）
+
+    # dataclass へ
+    try:
+        cfg = Config(**merged)
+    except TypeError:
+        # 予期せぬキーが残っても落とさないよう、許容キーだけで生成
+        allowed = {f.name for f in Config.__dataclass_fields__.values()}
+        safed = {k: v for k, v in merged.items() if k in allowed}
+        cfg = Config(**safed)
+
+    return cfg

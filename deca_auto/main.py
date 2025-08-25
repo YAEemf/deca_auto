@@ -45,26 +45,27 @@ def main(toml_path: str | None = None):
     logger = get_logger()
 
     try:
-        # 1) 設定
+        # 1 設定
         raw = cfgmod.load_user_config(toml_path)
         cfg = cfgmod.validate_config(raw)
+        print(cfg)
 
-        # 2) バックエンド
+        # 2 バックエンド
         xp, use_gpu = select_xp(force_numpy=cfg.force_numpy)
         logger.info(f"Backend: {'CuPy/GPU' if use_gpu else 'NumPy/CPU'}")
 
-        # 3) グリッド・評価帯域
+        # 3 グリッド・評価帯域
         f_dev = make_freq_grid(cfg, xp)
         m_eval, z_target = make_eval_band_and_mask(cfg, f_dev, xp)
         f_cpu = to_cpu(f_dev)
         target_poly = _make_target_polyline(cfg)
 
-        # 4) 図1のみ先に作成
+        # 4 図1のみ先に作成
         figs = init_figures(cfg.plot_view)
         if cfg.plot_view and figs["ax1"] is not None:
             show_loading(figs["ax1"])
 
-        # 5) Zc 事前計算
+        # 5 Zc 事前計算
         Zc_list_dev: List["xp.ndarray"] = []
         C_list = [c.C for c in cfg.capacitors]
         for cap in tqdm(cfg.capacitors, desc="Cap models", unit="cap",
@@ -76,11 +77,11 @@ def main(toml_path: str | None = None):
             Zc_cpu_dict = {cap.name: to_cpu(z) for cap, z in zip(cfg.capacitors, Zc_list_dev)}
             plot_caps_Zc(figs["ax1"], f_cpu, Zc_cpu_dict)
 
-        # 6) 段順・寄生
+        # 6 段順・寄生
         order_idx = sort_indices_by_C_small_to_large(C_list)
         parasitics = build_static_parasitics(f_dev, cfg, xp, getattr(xp, cfg.dtype_c))
 
-        # 7) チャンク上限・フラッシュ閾値
+        # 7 チャンク上限・フラッシュ閾値
         n_freq = int(f_dev.shape[0])
         dtype_c_bytes = (8 if cfg.dtype_c == "complex64" else 16)
         dtype_r_bytes = (4 if cfg.dtype_r == "float32" else 8)
@@ -89,7 +90,7 @@ def main(toml_path: str | None = None):
         logger.info(f"Chunk limit (estimated): {max_chunk}")
         flush_threshold = min(max_chunk, 1024*16)
 
-        # 8) プログレス（総数は理論値）
+        # 8 プログレス（総数は理論値）
         if len(cfg.capacitors) == 0:
             logger.warning("コンデンサの候補がありません")
             sys.exit(1)
@@ -97,7 +98,7 @@ def main(toml_path: str | None = None):
         pbar = tqdm(total=total_est, desc="Enumerating combos", unit="combos",
                     dynamic_ncols=True, mininterval=0.2)
 
-        # 9) グラフ2を探索開始の直前にプレースホルダで表示
+        # 9 グラフ2を探索開始の直前にプレースホルダで表示
         eval_lines = {
             "band": (cfg.f_L, cfg.f_H),
             "mask_x": target_poly[:, 0] if target_poly is not None else None,
@@ -109,7 +110,7 @@ def main(toml_path: str | None = None):
             figs["ax2"] = ax2
             figs["fig2"] = None if ax2 is None else ax2.figure
 
-        # 10) 探索ループ
+        # 10 探索ループ
         global_best_scores: np.ndarray | None = None
         global_best_records: List[Dict] = []
         global_best_traces: List[Tuple[str, np.ndarray]] = []
@@ -290,7 +291,7 @@ def main(toml_path: str | None = None):
             figs["ax2"] = ax2
             figs["fig2"] = None if ax2 is None else ax2.figure
 
-        # 11) Excel 出力
+        # 11 Excel 出力
         if global_best_traces:
             topk_series = [(lab, decimate_for_transfer(tr, factor=1)) for lab, tr in global_best_traces]
             out_path = write_topk_result(cfg.excel_path, cfg.excel_name, f_cpu,
@@ -299,10 +300,10 @@ def main(toml_path: str | None = None):
         else:
             logger.warning("上位候補がありませんでした。")
 
-        # 12) ブロッキング表示
+        # 12 ブロッキング表示
         if cfg.plot_view and figs.get("fig1") is not None:
             import matplotlib.pyplot as plt
-            logger.info("グラフウィンドウを閉じると終了します。")
+            logger.info("グラフを閉じると終了します。")
             plt.ioff(); plt.show()
 
     except Exception:

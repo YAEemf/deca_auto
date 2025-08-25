@@ -57,7 +57,7 @@ def metrics_from_zin(Zin_dev, f_dev, m_eval, z_target, xp) -> Dict[str, "xp.ndar
         area_under = xp.zeros((Z.shape[0],), dtype=absZ.dtype)
         rough_l1   = xp.zeros((Z.shape[0],), dtype=absZ.dtype)
 
-    # アンチレゾ（+→−）かつ目標超過のみ
+    # 目標超過のアンチレゾのみ検知
     sgn   = xp.sign(xp.diff(logZ, axis=1))
     peaks = (sgn[:, :-1] > 0) & (sgn[:, 1:] < 0)
     over_center = (over > 0.0)[:, 1:-1]
