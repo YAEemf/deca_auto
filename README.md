@@ -5,7 +5,7 @@
 デカップリングコンデンサの組み合わせ最適解を自動探索するツールです。  
 `user_config.toml` で定義されたコンデンサをもとに、アンチレゾナンスの少ない優れた合成インピーダンスを持つ組み合わせを探索します。評価基準は任意に変更可
 
-!["実行時スクショ"](https://raw.githubusercontent.com/YAEemf/deca_auto/refs/heads/main/tests/Screenshot%202025-08-24%20204011.png)
+!["実行時スクショ"](https://raw.githubusercontent.com/YAEemf/deca_auto/refs/heads/main/tests/Screenshot%202025-08-25%20133549.png)
 
 ---
 
