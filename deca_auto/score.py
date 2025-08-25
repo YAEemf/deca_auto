@@ -20,7 +20,6 @@ from . import pdn
 
 
 def _logspan_and_zref(f_dev, m_eval, z_target, xp) -> Tuple["xp.ndarray", "xp.ndarray"]:
-    """帯域の log(f_H/f_L) と zref(帯域内 z_target の中央値) を返す（device スカラー）"""
     f = f_dev[m_eval]
     if f.size >= 2:
         lspan = xp.log(f[-1]) - xp.log(f[0])
@@ -32,16 +31,11 @@ def _logspan_and_zref(f_dev, m_eval, z_target, xp) -> Tuple["xp.ndarray", "xp.nd
     zref = xp.maximum(zref, xp.array(1e-12, dtype=zt.dtype))
     return lspan, zref
 
-
 def metrics_from_zin(Zin_dev, f_dev, m_eval, z_target, xp) -> Dict[str, "xp.ndarray"]:
-    """
-    指標算出（device）。area は log f 台形則。anti は +→− の中心、over のみカウント。
-    返すキー: max_over/area_over/under_area/anti_count/anti_height/flat_std + zref/logspan
-    """
     sel = m_eval
-    Z  = Zin_dev[:, sel]         # (B,Fe)
-    zt = z_target[sel]           # (Fe,)
-    f  = f_dev[sel]              # (Fe,)
+    Z  = Zin_dev[:, sel]     # (B,Fe)
+    zt = z_target[sel]       # (Fe,)
+    f  = f_dev[sel]          # (Fe,)
 
     absZ = xp.abs(Z)
     logZ = xp.log10(absZ + 1e-30)
@@ -51,15 +45,19 @@ def metrics_from_zin(Zin_dev, f_dev, m_eval, z_target, xp) -> Dict[str, "xp.ndar
 
     max_over = xp.nanmax(over, axis=1)
 
-    lfx = xp.log(f)
+    # area（log f 台形則）
     if f.size >= 2:
-        dlf = xp.diff(lfx)                                  # (Fe-1,)
+        lfx = xp.log(f); dlf = xp.diff(lfx)
         area_over  = xp.sum(0.5 * (over[:, :-1]  + over[:, 1:])  * dlf[None, :], axis=1)
         area_under = xp.sum(0.5 * (under[:, :-1] + under[:, 1:]) * dlf[None, :], axis=1)
+        # L1 粗さ（ギザつき）：log|Z| の 1次差分の L1 を logspan で規格化
+        rough_l1 = xp.sum(xp.abs(xp.diff(logZ, axis=1)), axis=1) / (lfx[-1] - lfx[0])
     else:
         area_over  = xp.zeros((Z.shape[0],), dtype=absZ.dtype)
         area_under = xp.zeros((Z.shape[0],), dtype=absZ.dtype)
+        rough_l1   = xp.zeros((Z.shape[0],), dtype=absZ.dtype)
 
+    # アンチレゾ（+→−）かつ目標超過のみ
     sgn   = xp.sign(xp.diff(logZ, axis=1))
     peaks = (sgn[:, :-1] > 0) & (sgn[:, 1:] < 0)
     over_center = (over > 0.0)[:, 1:-1]
@@ -69,9 +67,7 @@ def metrics_from_zin(Zin_dev, f_dev, m_eval, z_target, xp) -> Dict[str, "xp.ndar
 
     flat_std = xp.nanstd(logZ, axis=1)
 
-    # 正規化用スカラー（device）
     logspan, zref = _logspan_and_zref(f_dev, m_eval, z_target, xp)
-
     out_dtype = absZ.dtype
     return {
         "max_over":   max_over.astype(out_dtype, copy=False),
@@ -80,11 +76,10 @@ def metrics_from_zin(Zin_dev, f_dev, m_eval, z_target, xp) -> Dict[str, "xp.ndar
         "anti_count": anti_count.astype(out_dtype, copy=False),
         "anti_height": anti_height.astype(out_dtype, copy=False),
         "flat_std":   flat_std.astype(out_dtype, copy=False),
-        # 正規化用
+        "rough_l1":   rough_l1.astype(out_dtype, copy=False),
         "zref":       zref.astype(out_dtype, copy=False),
         "logspan":    logspan.astype(out_dtype, copy=False),
     }
-
 
 def topk_indices(scores_dev, k: int, xp):
     """下位kの安定抽出。NaN/±Inf を無害化し float64 で比較。"""
@@ -102,36 +97,29 @@ def topk_indices(scores_dev, k: int, xp):
 
 
 def score_linear_comb(metrics: Dict[str, "xp.ndarray"], w: dict, parts_count, xp):
-    """
-    合成スコア（小さいほど良い）。無次元化し、float64 で加算して比較精度を確保。
-    """
-    # 正規化係数（device スカラー）
-    zref    = metrics.get("zref",    None)
-    logspan = metrics.get("logspan", None)
-    if (zref is None) or (logspan is None):
-        # 後方互換フォールバック（通常は到達しない）
-        zref    = xp.maximum(xp.median(metrics["max_over"]), xp.array(1e-12, dtype=metrics["max_over"].dtype))
-        logspan = xp.array(1.0, dtype=zref.dtype)
+    # 正規化（device スカラー→float64）
+    zref    = metrics["zref"].astype(xp.float64, copy=False)
+    logspan = metrics["logspan"].astype(xp.float64, copy=False)
 
-    zref64    = zref.astype(xp.float64, copy=False)
-    logspan64 = logspan.astype(xp.float64, copy=False)
-
-    # 無次元化（float64）
-    max_over_n   = (metrics["max_over"].astype(xp.float64)   / zref64)
-    area_over_n  = (metrics["area_over"].astype(xp.float64)  / (zref64 * logspan64))
-    under_area_n = (metrics["under_area"].astype(xp.float64) / (zref64 * logspan64))
-    anti_h_n     = (metrics["anti_height"].astype(xp.float64)/ zref64)
+    max_over_n   = (metrics["max_over"].astype(xp.float64)   / zref)
+    area_over_n  = (metrics["area_over"].astype(xp.float64)  / (zref * logspan))
+    under_area_n = (metrics["under_area"].astype(xp.float64) / (zref * logspan))
+    anti_h_n     = (metrics["anti_height"].astype(xp.float64)/ zref)
     flat_std     =  metrics["flat_std"].astype(xp.float64)
+    rough_l1     =  metrics["rough_l1"].astype(xp.float64)
+
+    # フラットネス強化：flat_std + 0.5*rough_l1（重みは w['flat'] で一括）
+    flat_combo = flat_std + 0.5 * rough_l1
 
     s = xp.zeros_like(max_over_n, dtype=xp.float64)
     s += float(w.get("max",  0.0)) * max_over_n
     s += float(w.get("area", 0.0)) * area_over_n
-    s += float(w.get("flat", 0.0)) * flat_std
+    s += float(w.get("flat", 0.0)) * flat_combo
     s += float(w.get("under",0.0)) * under_area_n
     s += float(w.get("anti", 0.0)) * (metrics["anti_count"].astype(xp.float64) + 0.25 * anti_h_n)
     if w.get("parts", 0.0) != 0.0:
         s += float(w["parts"]) * parts_count.astype(xp.float64)
-    return s  # float64 device
+    return s
 
 
 def topk_indices(scores_dev, k: int, xp):

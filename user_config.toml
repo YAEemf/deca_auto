@@ -35,7 +35,7 @@ R_v = 0.1e-3
 L_v = 1e-9
 
 # 平面モデル（直列 Rp + (C_p, tanδ)）
-R_p        = 0.5e-3
+R_p        = 1e-3
 C_p        = 10e-12
 tan_delta_p = 0.02
 
@@ -62,16 +62,8 @@ dc_bias = 3.3
 # C = モデルを指定したら基本不要だが、読み込みに失敗した時に使用する
 
 [[capacitors]]
-name = "MLCC_100n"
-C    = 100e-9
-
-[[capacitors]]
 name = "MLCC_1u"
 C    = 1e-6
-
-[[capacitors]]
-name = "MLCC_2.2u"
-C    = 2.2e-6
 
 [[capacitors]]
 name = "MLCC_3.3u"
@@ -96,13 +88,19 @@ C    = 33e-6
 [[capacitors]]
 name = "AlPoly_47u"
 C    = 47e-6
-ESR  = 50e-3
-ESL  = 3e-9
+ESR  = 100e-3
+ESL  = 2e-9
 
 [[capacitors]]
 name = "AlPoly_100u"
 C    = 100e-6
-ESR  = 50e-3
+ESR  = 100e-3
+ESL  = 3e-9
+
+[[capacitors]]
+name = "AlPoly_220u"
+C    = 220e-6
+ESR  = 100e-3
 ESL  = 3e-9
 
 # ---- 探索パラメータ ----
@@ -111,23 +109,23 @@ min_total_parts_ratio = 0.30   # 総数の下限（割合）
 top_k                 = 10
 shuffle_evaluation    = true
 
-# ---- スコア重み（小さいほど良い。正の重みは減点、負は加点）----
+# ---- スコア重み（総スコアは小さいほど良い。大きい重みほど重視）----
 [weights]
-max      = 0.9
-area     = 0.65
-anti     = 0.35
-flat     = 0.15
-under    = 0.0
-parts    = 0.0
-mc_worst = 1.0
+max      = 0.9    # 最大超過
+area     = 0.65   # 超過面積
+anti     = 0.25   # アンチレゾナンス
+flat     = 0.10   # 平滑さ
+under    = -0.01    # 目標を下回った時に評価
+parts    = -0.01    # 部品点数
+mc_worst = 1.0    # モンテカルロの最悪値（MLCCのDCバイアス考慮）
 
 # ---- Monte Carlo（ロバスト化）----
-mc_enable     = true
+mc_enable     = false
 mc_samples    = 64
-tol_C         = 0.30
-tol_ESR       = 0.20
-tol_ESL       = 0.20
-mlcc_derating = 0.75
+tol_C         = 0.20
+tol_ESR       = 0.15
+tol_ESL       = 0.15
+mlcc_derating = 0.5  # 0.0～0.8
 
 # 共通乱数シード
 seed = 1234
